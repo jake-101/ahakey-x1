@@ -5,8 +5,13 @@
   "id": "ahakey",
   "publisher": "jake-101",
   "name": "AhaKey Bridge",
-  "version": "0.1.5",
-  "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue breathing while working, yellow when an agent needs you, green flash when done.",
+  "version": "0.1.6",
+  "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue sweep while working, red flash when an agent needs you, cyan siren when done.",
+  "icon": "icon.png",
+  "cover": {
+    "path": "cover.jpg",
+    "alt": "An AhaKey X1 macro keyboard on a dark desk, its LED light bar glowing blue in a Knight Rider sweep"
+  },
   "author": { "name": "Jake" },
   "license": "MIT",
   "engines": { "orca": ">=1.4.248" },

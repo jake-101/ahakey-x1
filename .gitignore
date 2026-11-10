@@ -5,3 +5,4 @@ daemon/ahakey-daemon
 
 # macOS
 .DS_Store
+node_modules/
