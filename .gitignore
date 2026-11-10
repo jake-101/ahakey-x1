@@ -1,0 +1,7 @@
+# build artifacts
+daemon/ahakey-daemon
+*.o
+.orca/
+
+# macOS
+.DS_Store

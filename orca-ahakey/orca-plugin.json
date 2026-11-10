@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stablyai/orca/main/config/schemas/orca-plugin.schema.json",
+  "manifestVersion": 2,
+  "execution": "trusted-worker",
+  "id": "ahakey",
+  "name": "AhaKey Bridge",
+  "version": "0.1.0",
+  "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue breathing while working, yellow when an agent needs you, green flash when done.",
+  "author": { "name": "Jake" },
+  "license": "MIT",
+  "engines": { "orca": ">=1.4.246" },
+  "pluginApi": 1,
+  "main": "main.ts",
+  "capabilities": [{ "kind": "agent:read" }],
+  "contributes": {
+    "events": [{ "on": "agent.status.changed" }]
+  }
+}
