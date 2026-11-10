@@ -1,5 +1,22 @@
 # Session log
 
+## 2026-11-10 (night, 3) — key bindings finalized, daemon /remap + status polling
+
+- User feedback on real usage: the key-to-binding attribution was shifted — the actual
+  layout is checkmark=Return, **X=Down** (which in OpenCode dialogs jumps into the
+  sub-agent/session list — the "can't get out" complaint), **back arrow=Delete**.
+- Remapped **X → Escape** (HID 0x29) — the universal "get out" key. Final bindings:
+  **mic=F13, checkmark=Return, X=Escape, back arrow=Delete.**
+- The standalone `remap-key.swift` tool can't reach a system-connected (non-advertising)
+  device — moved remaps into the daemon: **`POST /remap {"keyIndex":0-3,"hid":[bytes]}`**
+  (0x73 + SAVE_CONFIG on the daemon's always-on connection, echo-verified).
+- Daemon now **polls device status (0x00) every 2 s** (per the vendor's poll-don't-push
+  rule) and exposes it in `/status` → `device:{battery,workMode,lightMode,switchState,
+  brightness,...}`. Heartbeat suppressible during config writes.
+- Daemon is now the single tool for everything: state, preview, remap, status. Confirmed
+  the device's stored config matches what we observed (mode 0, our bindings survive
+  power cycles via SAVE_CONFIG).
+
 ## 2026-11-10 (night, 2) — Rust runtime trial: adopted for config, Swift daemon stays for live state
 
 - Installed Rust (brew, 1.99.1); cloned + built `ahakey-runtime-rust` to

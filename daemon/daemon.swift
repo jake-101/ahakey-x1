@@ -41,11 +41,14 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var activeState: String = "idle"     // semantic Orca state (drives heartbeat)
     var doneTimer: DispatchWorkItem?
     var workingBeat = 0
+    var deviceState: [String: Int] = [:] // from periodic 0x00 queries
+    var suppressHeartbeat = false
 
     func start() {
         setbuf(stdout, nil) // unbuffered logging — stdout goes to a file under launchd
         central = CBCentralManager(delegate: self, queue: nil)
         startHeartbeat()
+        startStatusPolling()
     }
 
     // MARK: central
@@ -167,19 +170,34 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         print("[ble] preview effect -> \(effect)")
     }
 
+    /// Poll device status every 2 s (firmware never pushes mode/lever changes),
+    /// skipped while an OLED upload is in flight.
+    func startStatusPolling() {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            if let cmd = self.cmdChar, let per = self.peripheral,
+               !OledUploader.shared.isBusy {
+                per.writeValue(Data([0xAA, 0xBB, 0x00, 0xCC, 0xDD]), for: cmd, type: .withResponse)
+            }
+            self.startStatusPolling()
+        }
+    }
+
     /// Animated effects play briefly then settle (and same-state re-sends are
     /// ignored), so while agents are working, re-trigger the Knight Rider via
     /// the 0x91 preview command, which restarts the effect each time.
     func startHeartbeat() {
         DispatchQueue.global().asyncAfter(deadline: .now() + 8) { [weak self] in
             guard let self else { return }
-            switch self.activeState {
-            case "working":
-                self.preview(effect: 1) // singleMove — blue Knight Rider flow
-            case "waiting", "blocked":
-                self.send(raw: 0)       // warningBlink — red flash
-            default:
-                break
+            if !self.suppressHeartbeat {
+                switch self.activeState {
+                case "working":
+                    self.preview(effect: 1) // singleMove — blue Knight Rider flow
+                case "waiting", "blocked":
+                    self.send(raw: 0)       // warningBlink — red flash
+                default:
+                    break
+                }
             }
             self.startHeartbeat()
         }
@@ -191,6 +209,43 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         let f = frame(0x90, [raw])
         peripheral?.writeValue(f, for: cmd, type: .withResponse)
         print("[ble] raw state -> \(raw)")
+    }
+
+    // MARK: key remap (0x73) — runs on the daemon's existing connection
+
+    func remapKey(index: UInt8, hid: [UInt8], completion: @escaping (String) -> Void) {
+        guard let cmd = cmdChar, let per = peripheral else {
+            completion("not connected"); return
+        }
+        suppressHeartbeat = true
+        print("[remap] key \(index) -> \(hid.map { String(format: "%02X", $0) }.joined())")
+
+        // wait for a command echo (0x73 config, then 0x04 save); other echoes ignored
+        func waitForEcho(_ expect: UInt8, timeout: Double) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline {
+                if OledUploader.shared.lastGenericEcho == expect { return true }
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            return OledUploader.shared.lastGenericEcho == expect
+        }
+
+        DispatchQueue.global().async {
+            var ok = true
+            OledUploader.shared.beginGenericWait()
+            let f = frame(0x73, [0x73, 0x00, index] + hid)
+            per.writeValue(f, for: cmd, type: .withResponse)
+            ok = waitForEcho(0x73, timeout: 3)
+            print("[remap] key write ack: \(ok)")
+            if ok {
+                OledUploader.shared.beginGenericWait()
+                per.writeValue(frame(0x04, []), for: cmd, type: .withResponse)
+                ok = waitForEcho(0x04, timeout: 3)
+                print("[remap] save ack: \(ok)")
+            }
+            self.suppressHeartbeat = false
+            completion(ok ? "ok" : "no device ack — retry or power-cycle")
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
@@ -210,9 +265,20 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         if let e = error { print("[ble] notify error: \(e)") }
         let v = characteristic.value ?? Data()
         print("[ble] notify(\(characteristic.uuid)): \(v.map { String(format: "%02X", $0) }.joined(separator: " "))")
+        // 0x00 device status response: AA BB 00 [battery][signal][fwM][fwm][mode][light][switch][brightness] CC DD
+        if characteristic.uuid == CBUUID(string: "7344"), v.count >= 12, v[2] == 0x00 {
+            deviceState = ["battery": Int(v[3]), "firmwareMajor": Int(v[5]),
+                           "firmwareMinor": Int(v[6]), "workMode": Int(v[7]),
+                           "lightMode": Int(v[8]), "switchState": Int(v[9]),
+                           "brightness": Int(v[10])]
+        }
         // bulk-write flow: device echoes the command byte (0x80 prepare / 0x81 write-result)
         if v.count >= 3, v[2] == 0x80 || v[2] == 0x81 {
             OledUploader.shared.signalAck(echo: v[2])
+        }
+        // other command echoes (0x73 key config, 0x04 save, ...) for one-shot writes
+        if v.count >= 3, v[2] != 0x00, v[2] != 0x80, v[2] != 0x81 {
+            OledUploader.shared.signalGeneric(echo: v[2])
         }
     }
 }
@@ -223,6 +289,7 @@ final class OledUploader {
     static let shared = OledUploader()
     private let lock = NSLock()
     private var uploading = false
+    var isBusy: Bool { lock.withLock { uploading } }
     private let ack80 = DispatchSemaphore(value: 0)  // prepare-write echo
     private let ack81 = DispatchSemaphore(value: 0)  // write-result echo
     private let ackLock = NSLock()
@@ -240,6 +307,13 @@ final class OledUploader {
         default: break
         }
     }
+
+    // generic command echo (for one-shot config writes like 0x73/0x04)
+    private let genericLock = NSLock()
+    private var genericEcho: UInt8 = 0
+    var lastGenericEcho: UInt8 { genericLock.lock(); defer { genericLock.unlock() }; return genericEcho }
+    func beginGenericWait() { genericLock.lock(); genericEcho = 0; genericLock.unlock() }
+    func signalGeneric(echo: UInt8) { genericLock.lock(); genericEcho = echo; genericLock.unlock() }
 
     private func drain() {
         while ack80.wait(timeout: .now()) == .success {}
@@ -436,9 +510,21 @@ final class Server {
             } else {
                 reply(conn, 400, "{\"ok\":false}")
             }
+        } else if method == "POST" && path == "/remap" {
+            if let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+               let idx = json["keyIndex"] as? Int, (0...3).contains(idx),
+               let hidArr = json["hid"] as? [Int], !hidArr.isEmpty,
+               hidArr.allSatisfy({ (0...255).contains($0) }) {
+                Ble.shared.remapKey(index: UInt8(idx), hid: hidArr.map { UInt8($0) }) { result in
+                    self.reply(conn, result == "ok" ? 200 : 500, "{\"ok\":\(result == "ok"),\"result\":\"\(result)\"}")
+                }
+            } else {
+                reply(conn, 400, "{\"ok\":false,\"error\":\"need keyIndex 0-3 and hid byte array\"}")
+            }
         } else if method == "GET" && (path == "/" || path == "/status") {
             let s = Ble.shared.lastState
-            reply(conn, 200, "{\"state\":\"\(s)\",\"connected\":\(Ble.shared.cmdChar != nil)}")
+            let dev = Ble.shared.deviceState.map { "\"\($0.key)\":\($0.value)" }.sorted().joined(separator: ",")
+            reply(conn, 200, "{\"state\":\"\(s)\",\"connected\":\(Ble.shared.cmdChar != nil),\"device\":{\(dev)}}")
         } else {
             reply(conn, 404, "{\"ok\":false}")
         }

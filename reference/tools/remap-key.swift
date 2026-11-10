@@ -39,12 +39,18 @@ final class Bot: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         guard central.state == .poweredOn else { print("BT off"); exit(1) }
-        guard let p = central.retrievePeripherals(withIdentifiers: [targetId]).first else {
-            print("AhaKey not found — is it powered on and paired?"); exit(1)
-        }
-        peripheral = p
-        central.connect(p, options: nil)
-        print("connecting to \(p.name ?? "AhaKey")...")
+        central.scanForPeripherals(withServices: nil, options: nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
+                        advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
+        guard name.lowercased().hasPrefix("ahakey") else { return }
+        central.stopScan()
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        print("connecting to \(name)...")
+        central.connect(peripheral, options: nil)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {

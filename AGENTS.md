@@ -32,9 +32,10 @@ reference/source-docs/     vendor docs (exact copies; ble-protocol.md is partly 
 
 ## The device
 
-- BLE only; USB-C is charging-only. Advertises as "AhaKey AF1E", address `D0:F8:AF:1E:7E:C3`.
+- BLE only; USB-C is charging-only. Advertises as "AhaKey …" — **the suffix rotates with
+  the BLE MAC on every power cycle** (AF1E → B11E → …); connect by name prefix, not address.
 - Keys (left→right): mic, checkmark, X, back arrow. Plain BLE HID — work on any computer.
-  Current bindings: mic=**F13**, checkmark=Return, X=Delete, back=Down.
+  Bindings (mode 0): mic=**F13**, checkmark=**Return**, X=**Escape**, back arrow=**Delete**.
 - The mic is not a macOS audio device; the mic key is just an HID key (F13 → Raycast
   dictation, input = Studio Display Microphone).
 - Custom service `0x7340`: write commands to char `0x7343`, responses on `0x7344` notify.
@@ -63,9 +64,10 @@ orca plugin logs local.ahakey                               # plugin logs
 orca plugin dev emit . agent.status.changed \
   --data '{"workspaceId":null,"paneKey":"t","state":"working","receivedAt":1}'  # test event
 
-# keys
-cd reference/tools && swift remap-key.swift <0-3> <HID hex>  # remap a key over BLE
-swift keylogger.swift 30                                     # watch keycodes
+# keys (via daemon — works while connected, no power-cycle needed)
+curl -s -X POST localhost:8787/remap -H 'content-type: application/json' \
+  -d '{"keyIndex":2,"hid":[41]}'   # keyIndex 0-3 (mic,check,X,back); HID 29=Esc
+cd reference/tools && swift keylogger.swift 30   # watch keycodes (needs Accessibility)
 ```
 
 ## Conventions / gotchas
