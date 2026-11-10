@@ -1,0 +1,16 @@
+{
+  "name": "ahakey-bridge",
+  "version": "0.1.8",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "private": true
+}

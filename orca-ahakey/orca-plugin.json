@@ -5,7 +5,7 @@
   "id": "ahakey",
   "publisher": "jake-101",
   "name": "AhaKey Bridge",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue sweep while working, red flash when an agent needs you, cyan siren when done.",
   "icon": "icon.png",
   "cover": {
@@ -28,6 +28,15 @@
         "type": "string",
         "maxLength": 40,
         "placeholder": "e.g. build mode"
+      },
+      {
+        "key": "daemonPort",
+        "title": "Daemon port",
+        "description": "TCP port of the local ahakey-daemon (default 8787). Only change this if you run the daemon on a different port.",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 65535,
+        "default": 8787
       }
     ],
     "statusBarItems": [

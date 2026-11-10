@@ -6,16 +6,20 @@ import Network
 
 // ahakey-ble-daemon
 // Keeps a BLE connection to the AhaKey X1 and runs a tiny HTTP server on
-// 127.0.0.1:8787. POST /state {"state":"working|waiting|done|idle"} drives the
+// 127.0.0.1 (default port 8787, override with AHAKEY_PORT env or first arg).
+// POST /state {"state":"working|waiting|blocked|done|idle"} drives the
 // X1 light bar via the firmware's AI-state command (0x90).
 //
 // Build:  swiftc -O -o ahakey-daemon daemon.swift
 // Run:    ./ahakey-daemon
 // Test:   curl -X POST localhost:8787/state -d '{"state":"working"}'
 
-let peripheralId = UUID(uuidString: "58A4FF66-FB55-B06E-F479-4BAB74FF3C33")!
 let peripheralNamePrefix = "AhaKey"
-let port: UInt16 = 8787
+let port: UInt16 = {
+  if let a = CommandLine.arguments.dropFirst().first, let p = UInt16(a) { return p }
+  if let e = ProcessInfo.processInfo.environment["AHAKEY_PORT"], let p = UInt16(e) { return p }
+  return 8787
+}()
 
 // Orca aggregate state -> AhaKey 0x90 state byte (effects verified by LED sweep 2026-11-10)
 func ahaState(_ orca: String) -> UInt8 {

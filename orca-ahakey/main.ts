@@ -6,14 +6,15 @@
 
 import type { OrcaWorkerApi } from "orca/worker"
 
-const DAEMON = "http://127.0.0.1:8787/state"
-
 type AgentState = "working" | "blocked" | "waiting" | "done"
 type AggregateState = AgentState | "idle"
 
 const PRIORITY: Record<AgentState, number> = { blocked: 3, waiting: 3, working: 2, done: 1 }
 
 export default function activate(orca: OrcaWorkerApi) {
+  // Daemon port — configurable in Settings (matches the daemon's port).
+  let daemonPort = 8787
+  const daemon = (path: string) => `http://127.0.0.1:${daemonPort}${path}`
   // paneKey -> "working" | "blocked" | "waiting" | "done"
   const states = new Map<string, AgentState>()
   let lastSent: AggregateState | null = null
@@ -50,7 +51,7 @@ export default function activate(orca: OrcaWorkerApi) {
     lastSent = state
     updateStatusBar(state)
     try {
-      await fetch(DAEMON, {
+      await fetch(daemon("/state"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ state }),
@@ -85,7 +86,7 @@ export default function activate(orca: OrcaWorkerApi) {
   // it's a one-shot (daemon turns the lights off itself) and re-asserting it
   // would replay the siren forever.
   const keepAlive = setInterval(() => {
-    fetch("http://127.0.0.1:8787/status")
+    fetch(daemon("/status"))
       .then((r) => r.json())
       .then((s: { device?: { battery?: number } }) => {
         if (typeof s?.device?.battery === "number") battery = s.device.battery
@@ -102,8 +103,14 @@ export default function activate(orca: OrcaWorkerApi) {
   // Orca's Settings — never automatically (the upload takes seconds and shows
   // an "Uploading pic" screen on the device, too ugly for every switch).
   let lastOledText: string | undefined
+
+  async function loadDaemonPort() {
+    const p = Number(await orca.settings.get("daemonPort"))
+    if (Number.isInteger(p) && p >= 1 && p <= 65535) daemonPort = p
+  }
   try {
     orca.settings.onDidChange(async () => {
+      await loadDaemonPort()
       const text = String((await orca.settings.get("oledText")) ?? "").trim()
       if (!text || text === lastOledText) return
       lastOledText = text
@@ -114,6 +121,7 @@ export default function activate(orca: OrcaWorkerApi) {
       }).catch(() => {})
     })
   } catch { /* settings API unavailable — screen stays as-is */ }
+  void loadDaemonPort()
 
   orca.log("ahakey: bridge active")
   return () => clearInterval(keepAlive)
