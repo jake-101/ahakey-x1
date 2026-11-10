@@ -1,5 +1,24 @@
 # Session log
 
+## 2026-11-10 (later) — LED polish: ending state + continuous working animation
+
+- Real-world use showed two flaws: the bar *settled* into static blue middle (1) at the
+  end of turns, and (2) mid-task after ~30 s of "working".
+- Root causes found in the vendor app source (cloned AhakeyAI/desktop): the firmware has
+  **17 named light effects**; the **0x84 state table** mapped state 5 (Stop) → middleLight
+  (static blue middle); animated effects settle after a while; same-state re-sends are
+  ignored; the **0x91 preview command restarts an effect every time**.
+- Fixes:
+  - New tool `reference/tools/set-light-mapping.swift` (0x84 + SAVE_CONFIG): state 0 →
+    warningBlink (11, red flash), state 5 (Stop) → off (0). Ending is now fully dark.
+  - Daemon heartbeat: while agents are working, re-trigger the Knight Rider via `0x91`
+    preview effect 1 every 8 s → continuous animation while working.
+  - Daemon: unbuffered stdout (launchd logs now work), `POST /state {"preview":N}`
+    endpoint, `activeState` vs `lastState` split.
+- Verified live with the user: continuous Knight Rider while working, red flash on
+  waiting, cyan siren on done, fully dark at rest. It also works in real Orca sessions —
+  the bar mirrors the assistant's own activity.
+
 ## 2026-11-10 — initial research, bring-up, and Orca bridge
 
 ### Research

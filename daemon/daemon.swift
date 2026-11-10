@@ -33,11 +33,15 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var central: CBCentralManager!
     var peripheral: CBPeripheral?
     var cmdChar: CBCharacteristic?
-    var lastState: String = "idle"
+    var lastState: String = "idle"       // what was last displayed (for /status)
+    var activeState: String = "idle"     // semantic Orca state (drives heartbeat)
     var doneTimer: DispatchWorkItem?
+    var workingBeat = 0
 
     func start() {
+        setbuf(stdout, nil) // unbuffered logging — stdout goes to a file under launchd
         central = CBCentralManager(delegate: self, queue: nil)
+        startHeartbeat()
     }
 
     // MARK: central
@@ -109,10 +113,38 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func send(state: String) {
         lastState = state
+        activeState = state
         guard let cmd = cmdChar else { return }
         let f = frame(0x90, [ahaState(state)])
         peripheral?.writeValue(f, for: cmd, type: .withResponse)
         print("[ble] state -> \(state)")
+    }
+
+    /// Direct light-effect preview (cmd 0x91) — bypasses the per-state table.
+    func preview(effect: UInt8) {
+        lastState = "preview\(effect)"
+        guard let cmd = cmdChar else { return }
+        let f = frame(0x91, [effect])
+        peripheral?.writeValue(f, for: cmd, type: .withResponse)
+        print("[ble] preview effect -> \(effect)")
+    }
+
+    /// Animated effects play briefly then settle (and same-state re-sends are
+    /// ignored), so while agents are working, re-trigger the Knight Rider via
+    /// the 0x91 preview command, which restarts the effect each time.
+    func startHeartbeat() {
+        DispatchQueue.global().asyncAfter(deadline: .now() + 8) { [weak self] in
+            guard let self else { return }
+            switch self.activeState {
+            case "working":
+                self.preview(effect: 1) // singleMove — blue Knight Rider flow
+            case "waiting", "blocked":
+                self.send(raw: 0)       // warningBlink — red flash
+            default:
+                break
+            }
+            self.startHeartbeat()
+        }
     }
 
     func send(raw: UInt8) {
@@ -188,6 +220,9 @@ final class Server {
                 if let raw = json["raw"] as? Int, (0...8).contains(raw) {
                     Ble.shared.send(raw: UInt8(raw))
                     reply(conn, 200, "{\"ok\":true,\"raw\":\(raw)}")
+                } else if let eff = json["preview"] as? Int, (0...16).contains(eff) {
+                    Ble.shared.preview(effect: UInt8(eff))
+                    reply(conn, 200, "{\"ok\":true,\"preview\":\(eff)}")
                 } else if let s = json["state"] as? String {
                     if s == "done" {
                         Ble.shared.send(state: "done")

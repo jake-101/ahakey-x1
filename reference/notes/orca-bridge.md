@@ -43,16 +43,38 @@ AhaKey X1 light bar
 | 8 | off |
 
 NOTE: the GitHub docs' inferred colors (yellow on permission, green on done) do NOT match
-this unit. Per-state colors may be customizable via command 0x84 (experimental) — untried.
+this unit. The device's actual per-state table is configurable via command 0x84.
+
+## Firmware effects vocabulary (from vendor app source, `LightEffectStyle`)
+
+0=off · 1=singleMove (blue Knight Rider flow) · 2=rainbowMove · 3=rainbowWave ·
+4=rainbowWaveSlow · 5=breathing · 6=middleLight (static blue middle) · 7=typingRipple ·
+8=comet · 9=scanBar · 10=pulseCenter · 11=warningBlink (red flash) · 12=successSweep ·
+13=blueThinking · 14=lowBattery · 15=chargingFlow · 16=approvalWait.
+
+## State table rewrite (2026-11-10, via `reference/tools/set-light-mapping.swift`)
+
+`0x84` frame: `AA BB 84 [mode] [eff0..eff8] CC DD` + SAVE_CONFIG. Factory table mapped
+state 5 (Stop) → middleLight (6) — that was the unwanted blue-middle *ending* state.
+Our table = factory defaults except: state 0 → warningBlink (11, red flash, "needs
+attention") and state 5 → off (0). Ending is now fully dark.
+
+## Firmware animation behavior (learned by experiment)
+
+- Effects animate briefly, then **settle into a static rest look**.
+- Re-sending the **same state byte is ignored** (no animation restart).
+- The **0x91 preview command restarts an effect every time** — used for the heartbeat.
+  Frame: `AA BB 91 [effectIndex] CC DD`; daemon endpoint `POST /state {"preview":N}`.
+- Continuous "working" animation = daemon heartbeat re-sending `0x91` effect 1 every 8 s.
 
 ## Active mapping (in daemon's `ahaState()`)
 
 | Orca state | X1 |
 |---|---|
-| any agent working | 3 — blue sweep |
-| any waiting/blocked | 0 — red flash |
-| all done | 7 — cyan siren, then idle after 5 s |
-| idle / no agents | 5 — off |
+| any agent working | blue Knight Rider, loops (heartbeat via 0x91 preview) |
+| any waiting/blocked | 0 — red flash (warningBlink) |
+| all done | 7 — cyan siren, then off after 5 s |
+| idle / no agents | 5 — off (dark) |
 
 ## API
 
