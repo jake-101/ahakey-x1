@@ -12,6 +12,10 @@ app. Research date: 2026-11-10.
   - `hermes-and-multi-computer.md` — using the X1 with Hermes Agent on another machine
   - `orca-bridge.md` — **built & installed**: Orca plugin + BLE daemon driving the light bar
   - `session-log.md` — chronological log of everything done in the first session
+- `research/` — deep-dives
+  - `protocol-deep-dive.md` — protocol semantics extracted from the official client source
+    (connection lifecycle, ACK/waiter mechanics, OLED upload sequence, poll requirements,
+    robustness lessons) — **read before modifying the daemon**
 - `source-docs/` — original docs downloaded from the AhakeyAI GitHub org (exact copies)
   - `protocol-*.md` — from [AhakeyAI/protocol](https://github.com/AhakeyAI/protocol) (BLE protocol, SDK, commands)
   - `desktop-*.md` — from [AhakeyAI/desktop](https://github.com/AhakeyAI/desktop) (official open-source desktop suite; `ble-protocol.md` is partly Chinese but is the most detailed protocol doc — reverse-engineered + packet-verified)

@@ -24,6 +24,7 @@ daemon/ahakey-daemon       compiled binary (launchd runs this)
 orca-ahakey/main.ts        plugin worker: aggregate agent states → daemon
 orca-ahakey/orca-plugin.json
 reference/README.md        index of all research
+reference/research/        protocol deep-dives (semantics from the vendor client source)
 reference/notes/           device summary, BLE cheatsheet, Orca bridge, plans, session log
 reference/tools/           ble-scan / ble-probe / ble-identify / keylogger / remap-key
 reference/source-docs/     vendor docs (exact copies; ble-protocol.md is partly Chinese)
@@ -69,6 +70,9 @@ swift keylogger.swift 30                                     # watch keycodes
 
 ## Conventions / gotchas
 
+- **Read `reference/research/protocol-deep-dive.md` before touching the daemon** — the
+  protocol has sharp edges (connection poisoning on 0x81 timeout, 180-byte packet cap,
+  poll-don't-push firmware, HID-bond swallowing the advertisement).
 - Don't talk BLE from more than one place: the daemon owns the connection; plugins/scripts
   go through HTTP.
 - HID byte for F-keys: F13=0x68 F14=0x69 F15=0x6A F16=0x6B F17=0x6C F18=0x6D F19=0x6E.

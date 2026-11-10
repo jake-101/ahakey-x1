@@ -1,5 +1,22 @@
 # Session log
 
+## 2026-11-10 (night) — systematic protocol research (vendor source)
+
+- Two parallel research passes over the official client source produced
+  `reference/research/protocol-deep-dive.md` — the real rules of the protocol:
+  - 0x81 data-write timeouts **poison the connection by design** (no request IDs); the
+    vendor app tears down and reconnects. Our OLED stall is explained; fix = connection
+    recycling + proper waiter table.
+  - Device stops advertising once the system HID link is up; the vendor finds it via
+    **retrieveConnectedPeripherals including HID service 0x1812** ("Issue #34").
+  - Status byte 7 of the 0x00 response is **brightness** (doc says "reserved" — wrong).
+  - Must poll status every 1.5 s (firmware never pushes lever/mode changes).
+  - Full OLED sequence includes a trailing SAVE_CONFIG (0x04) after 0x82.
+  - 0x93/0x94 (per-AI-state OLED) exist only in the Windows client, gated behind a
+    0x9F capability query — don't send blind.
+- Conclusion: our daemon works but is hacky (no waiter table, no connection poisoning,
+  no status poll, heartbeat never expires). A robust rewrite plan is in the deep-dive.
+
 ## 2026-11-10 (evening) — device identity, work modes, OLED paused
 
 - **Work modes discovered**: a short press on the power button cycles work mode
