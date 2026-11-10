@@ -4,6 +4,14 @@
 cloned to /tmp/ahakey-desktop), 2026-11-10. Two reports merged; file/line refs are to
 `ahakeyconfig-mac/Sources/` unless noted.*
 
+> **SUPERSEDED AS A BUILD PLAN**: after this research was done we found
+> [`AhakeyAI/ahakey-runtime-rust`](https://github.com/AhakeyAI/ahakey-runtime-rust) — an
+> official Rust daemon implementing BLE + config + lights + OLED upload with a loopback
+> WebSocket/JSON-RPC API. Rather than rewriting our Swift daemon using the rules below,
+> the preferred path is to **run the Rust runtime and point our Orca plugin at its IPC**.
+> The material below remains valuable as protocol understanding and for verifying the
+> runtime's behavior.
+
 ## The protocol rules we must follow (each one is a real failure the vendor hit)
 
 1. **Frame envelope everywhere**: `AA BB [cmd] [payload] CC DD`. ACK = `AA BB [cmd echo]
@@ -112,3 +120,7 @@ then:    AA BB 04 CC DD (SAVE_CONFIG — sent by the app's write flow; win-java 
   0x99 task-slot, 0x9A heartbeat, and 0x9F capability-query commands.
 - Nexting SDK (nexting.ai) has an AhaKey X1 case study with a JSON-over-BLE profile
   (device-audio/1) — alternative ecosystem, experimental.
+- **`ahakey-runtime-rust` — MAJOR FIND (2026-11-10, evening)**: an official standalone
+  Rust daemon doing BLE + config + OLED + lights with a loopback WebSocket/JSON-RPC API,
+  tests, crash recovery, and a mock mode. This is the "robust implementation" candidate —
+  see the next section.
