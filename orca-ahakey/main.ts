@@ -51,6 +51,17 @@ export default function activate(orca) {
     }
   })
 
+  // Re-assert the aggregate every 30 s so the daemon's watchdog (which expires
+  // "working" after 75 s of silence) doesn't kill the lights during genuinely
+  // long-running agent tasks. "Done" is skipped: it's a one-shot (daemon turns
+  // the lights off itself) and re-asserting it would replay the siren forever.
+  const keepAlive = setInterval(() => {
+    const agg = aggregate()
+    if (agg === "done") return
+    lastSent = null
+    void push()
+  }, 30_000)
+
   // Mirror the focused workspace's project name onto the X1's OLED.
   // (New subscribers immediately receive the current context.)
   orca.events.on("workspace.changed", (event) => {
@@ -65,4 +76,5 @@ export default function activate(orca) {
   })
 
   orca.log?.("ahakey: bridge active")
+  return () => clearInterval(keepAlive)
 }

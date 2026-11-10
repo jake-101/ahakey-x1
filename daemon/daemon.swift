@@ -43,6 +43,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var workingBeat = 0
     var deviceState: [String: Int] = [:] // from periodic 0x00 queries
     var suppressHeartbeat = false
+    var lastStateChangeAt = Date()       // watchdog: stale states expire
 
     func start() {
         setbuf(stdout, nil) // unbuffered logging — stdout goes to a file under launchd
@@ -155,6 +156,7 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     func send(state: String) {
         lastState = state
         activeState = state
+        lastStateChangeAt = Date()
         guard let cmd = cmdChar else { return }
         let f = frame(0x90, [ahaState(state)])
         peripheral?.writeValue(f, for: cmd, type: .withResponse)
@@ -183,13 +185,21 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
 
-    /// Animated effects play briefly then settle (and same-state re-sends are
-    /// ignored), so while agents are working, re-trigger the Knight Rider via
-    /// the 0x91 preview command, which restarts the effect each time.
+    /// Animated effects settle quickly and same-state re-sends are ignored, so:
+    /// - while agents are genuinely working, re-trigger the Knight Rider via the
+    ///   0x91 preview (restarts the effect each time);
+    /// - if "working" hasn't been re-asserted for 75 s, it's stale (agent pane
+    ///   zombied) — expire to idle, like the vendor's watchdog (60 s tool expiry).
+    /// The Orca plugin re-asserts the aggregate every 30 s, so real long tasks
+    /// stay lit.
     func startHeartbeat() {
         DispatchQueue.global().asyncAfter(deadline: .now() + 8) { [weak self] in
             guard let self else { return }
-            if !self.suppressHeartbeat {
+            let stale = Date().timeIntervalSince(self.lastStateChangeAt) > 75
+            if self.activeState == "working" && stale {
+                print("[watchdog] working state stale >75s -> idle")
+                self.send(state: "idle")
+            } else if !self.suppressHeartbeat {
                 switch self.activeState {
                 case "working":
                     self.preview(effect: 1) // singleMove — blue Knight Rider flow
