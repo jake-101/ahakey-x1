@@ -41,6 +41,7 @@ export default function activate(orca: OrcaWorkerApi) {
         id: "ahakey-status",
         text: state === "idle" ? `AhaKey${batt}` : `AhaKey: ${state}${batt}`,
         tone: TONES[state] ?? "neutral",
+        tooltip: `Agent status — click to re-sync (daemon port ${daemonPort})`,
       })
     } catch { /* status bar is cosmetic */ }
   }

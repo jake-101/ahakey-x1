@@ -5,7 +5,7 @@
   "id": "ahakey",
   "publisher": "jake-101",
   "name": "AhaKey Bridge",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue sweep while working, red flash when an agent needs you, cyan siren when done.",
   "icon": "icon.png",
   "cover": {
@@ -44,8 +44,7 @@
         "id": "ahakey-status",
         "text": "AhaKey",
         "icon": "zap",
-        "command": "ahakey.refresh",
-        "tooltip": "Agent status — click to re-sync"
+        "command": "ahakey.refresh"
       }
     ],
     "events": [{ "on": "agent.status.changed" }]
