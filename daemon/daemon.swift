@@ -82,6 +82,15 @@ final class Ble: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         p.delegate = self
         print("[ble] connecting to \(p.name ?? p.identifier.uuidString)")
         central.connect(p, options: nil)
+        // If the device rotated its identity (long-hold reset) the connect pends
+        // forever on a dead address. Give it 20 s, then recycle and re-scan by name.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self, self.peripheral === p, self.cmdChar == nil else { return }
+            print("[ble] connect timed out — recycling and re-scanning")
+            self.central.cancelPeripheralConnection(p)
+            self.peripheral = nil
+            self.connect()
+        }
     }
 
     private var cacheURL: URL {
