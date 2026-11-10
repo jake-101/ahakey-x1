@@ -72,6 +72,14 @@ cd reference/tools && swift keylogger.swift 30   # watch keycodes (needs Accessi
 
 ## Conventions / gotchas
 
+- **If you (an agent) work on this repo, leave what you learned in `reference/`.** This
+  repo doubles as a shared knowledge base: whatever you discover about the device, the
+  protocol, or the code — new commands, corrected behavior, gotchas, working packet
+  captures, firmware findings — belongs in `reference/research/` (deep-dives) or
+  `reference/notes/session-log.md` (what was done and why). Future agents — yours and
+  other people's — start from there. Update stale notes when reality proves them wrong;
+  say what you observed, not just what you concluded.
+
 - **Read `reference/research/protocol-deep-dive.md` before touching the daemon** — the
   protocol has sharp edges (connection poisoning on 0x81 timeout, 180-byte packet cap,
   poll-don't-push firmware, HID-bond swallowing the advertisement).
