@@ -29,6 +29,7 @@ export default function activate(orca) {
     const state = aggregate()
     if (state === lastSent) return
     lastSent = state
+    updateStatusBar(state)
     try {
       await fetch(DAEMON, {
         method: "POST",
@@ -43,12 +44,30 @@ export default function activate(orca) {
     }
   }
 
+  const TONES = { working: "accent", waiting: "danger", blocked: "danger", done: "success", idle: "neutral" }
+  function updateStatusBar(state) {
+    try {
+      orca.statusBar.update({
+        id: "ahakey-status",
+        text: state === "idle" ? "AhaKey" : `AhaKey: ${state}`,
+        tone: TONES[state] ?? "neutral",
+      })
+    } catch { /* status bar is cosmetic */ }
+  }
+
   orca.events.on("agent.status.changed", (event) => {
     if (event.state === "waiting" || event.state === "blocked" ||
         event.state === "working" || event.state === "done") {
       states.set(event.paneKey, event.state)
       void push()
     }
+  })
+
+  // Register the status bar item's command: pressing it (or running from the
+  // palette) forces a state refresh.
+  orca.commands?.register?.("ahakey.refresh", () => {
+    lastSent = null
+    void push()
   })
 
   // Re-assert the aggregate every 30 s so the daemon's watchdog (which expires
