@@ -1,5 +1,23 @@
 # Session log
 
+## 2026-11-10 — bridge lifecycle and HTTP reliability
+
+- Bound the daemon HTTP listener to IPv4 loopback and wait for the complete
+  Content-Length body. After rebuilding and restarting the launch agent, `lsof`
+  showed `127.0.0.1:8787`, `/status` reported the device connected, and a request
+  with headers and body sent separately returned 200.
+- Connection retries now abandon a timed-out cached identifier and use connected
+  device lookup or scanning, with generation guards against old callbacks. HTTP
+  routing, BLE state and periodic tasks coordinate on the main queue.
+- The plugin serializes state delivery, retries HTTP failures, uses the configured
+  port for OLED changes, and removes tracked agents on workspace removal. Orca
+  events do not identify every closed pane, so some stale states remain possible.
+- OLED write-result timeout handling remains unsafe: the current uploader continues
+  after timeout rather than recycling the poisoned connection.
+- Adding `workspace:read` made the development plugin pending approval, hiding
+  its status bar item. With the user's approval, reloaded `jake-101.ahakey`;
+  Orca's accessibility tree then showed `AhaKey: working` in the status bar.
+
 ## 2026-11-10 (night, 3) — key bindings finalized, daemon /remap + status polling
 
 - User feedback on real usage: the key-to-binding attribution was shifted — the actual

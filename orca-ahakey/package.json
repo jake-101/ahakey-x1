@@ -1,14 +1,14 @@
 {
   "name": "ahakey-bridge",
-  "version": "0.1.8",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.9",
+  "description": "Mirrors Orca agent status onto the AhaKey X1 light bar.",
+  "main": "main.ts",
   "scripts": {
     "typecheck": "tsc -p ."
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Jake",
+  "license": "MIT",
   "devDependencies": {
     "typescript": "^7.0.2"
   },

@@ -28,6 +28,20 @@ AhaKey X1 light bar
 - `daemon/daemon.swift` → `daemon/ahakey-daemon` — BLE connection + HTTP server on 127.0.0.1:8787
 - `~/Library/LaunchAgents/com.jake.ahakey-daemon.plist` — auto-start (RunAtLoad + KeepAlive)
 
+The bridge serializes state delivery and retries failed HTTP responses; it removes
+agents when Orca reports their workspace removed and prunes missing terminals when
+the focused-workspace event can be matched to a tracked workspace. Orca's event
+does not identify that workspace directly, and agent events may omit terminal IDs:
+last-terminal and nonfocused-pane closures cannot always be detected. Existing
+agent state across all workspaces also cannot be reconstructed at plugin startup.
+The plugin requests workspace-read permission for this reconciliation.
+
+The daemon binds HTTP to IPv4 loopback and waits for the declared HTTP body before
+routing. BLE connection attempts use generation guards, a timeout, and a fallback
+from the cached identifier to connected-device lookup and name scanning. BLE state,
+HTTP routing, polling, and heartbeat coordination run on the main queue. OLED
+uploads still lack safe 0x81 timeout recovery; see the protocol deep-dive.
+
 ## Verified LED effect table (0x90 state byte → effect, swept on device 2026-11-10)
 
 | Byte | Effect |
@@ -73,7 +87,7 @@ attention") and state 5 → off (0). Ending is now fully dark.
 |---|---|
 | any agent working | blue Knight Rider, loops (heartbeat via 0x91 preview) |
 | any waiting/blocked | 0 — red flash (warningBlink) |
-| all done | 7 — cyan siren, then off after 5 s |
+| all done | 7 — cyan siren, then off after 2 s |
 | idle / no agents | 5 — off (dark) |
 
 ## API

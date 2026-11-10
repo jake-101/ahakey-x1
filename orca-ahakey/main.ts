@@ -1,129 +1,253 @@
-// AhaKey Bridge — mirrors Orca agent status onto the AhaKey X1 light bar.
-//
-// Subscribes to agent.status.changed across ALL harnesses Orca supervises
-// (Claude Code, OMP, OpenCode, Codex, Grok, ...), aggregates them, and POSTs
-// the highest-priority state to the local BLE daemon (daemon/daemon.swift).
-
+// AhaKey Bridge — aggregate Orca agent status and deliver it to the BLE daemon.
 import type { OrcaWorkerApi } from "orca/worker"
 
 type AgentState = "working" | "blocked" | "waiting" | "done"
 type AggregateState = AgentState | "idle"
+type TrackedAgent = { state: AgentState; workspaceId: string | null; terminalId?: string; receivedAt: number }
 
 const PRIORITY: Record<AgentState, number> = { blocked: 3, waiting: 3, working: 2, done: 1 }
+const TONES: Record<AggregateState, "accent" | "danger" | "success" | "neutral"> = {
+  working: "accent", waiting: "danger", blocked: "danger", done: "success", idle: "neutral",
+}
+
+let stop: (() => void) | undefined
 
 export default function activate(orca: OrcaWorkerApi) {
-  // Daemon port — configurable in Settings (matches the daemon's port).
+  const states = new Map<string, TrackedAgent>()
+  const abort = new AbortController()
+  let stopped = false
   let daemonPort = 8787
-  const daemon = (path: string) => `http://127.0.0.1:${daemonPort}${path}`
-  // paneKey -> "working" | "blocked" | "waiting" | "done"
-  const states = new Map<string, AgentState>()
-  let lastSent: AggregateState | null = null
+  let settingsReady = false
+  let settingsLoading = false
+  let settingsRevision = 0
+  let oledChanged = false
+  let oledText: string | null = null
+  let oledRevision = 0
+  let oledDelivered = 0
+  let oledSending = false
+  let desired: AggregateState = "idle"
+  let revision = 1 // Initial idle must be delivered too.
+  let delivered = 0
+  let sending = false
+  let battery: number | null = null
+
+  const daemon = (port: number, path: string) => `http://127.0.0.1:${port}${path}`
+
+  function updateStatusBar() {
+    if (stopped) return
+    const batt = battery != null ? ` · ${battery}%` : ""
+    void orca.host.call("statusBar.update", {
+      id: "ahakey-status",
+      text: desired === "idle" ? `AhaKey${batt}` : `AhaKey: ${desired}${batt}`,
+      tone: TONES[desired],
+      tooltip: `Agent status — click to re-sync (daemon port ${daemonPort})`,
+    }).catch(() => {})
+  }
 
   function aggregate(): AggregateState {
-    const values = [...states.values()]
-    if (values.length === 0) return "idle"
-    let best: AgentState = "done"
-    for (const s of values) {
-      if ((PRIORITY[s] ?? 0) > (PRIORITY[best] ?? 0)) best = s
+    let best: AggregateState = "idle"
+    for (const { state } of states.values()) {
+      if (best === "idle" || PRIORITY[state] > PRIORITY[best]) best = state
     }
     return best
   }
 
-  const TONES: Record<AggregateState, "accent" | "danger" | "success" | "neutral"> = {
-    working: "accent", waiting: "danger", blocked: "danger", done: "success", idle: "neutral",
-  }
-  let battery: number | null = null
-
-  function updateStatusBar(state: AggregateState) {
-    try {
-      const batt = battery != null ? ` · ${battery}%` : ""
-      void orca.host.call("statusBar.update", {
-        id: "ahakey-status",
-        text: state === "idle" ? `AhaKey${batt}` : `AhaKey: ${state}${batt}`,
-        tone: TONES[state] ?? "neutral",
-        tooltip: `Agent status — click to re-sync (daemon port ${daemonPort})`,
-      })
-    } catch { /* status bar is cosmetic */ }
-  }
-
-  async function push() {
-    const state = aggregate()
-    if (state === lastSent) return
-    lastSent = state
-    updateStatusBar(state)
-    try {
-      await fetch(daemon("/state"), {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ state }),
-      })
-      orca.log(`ahakey: agents -> ${state} (${states.size} tracked)`)
-    } catch (err) {
-      // Daemon not running — don't spam; retry on next event.
-      lastSent = null
-      orca.log(`ahakey: daemon unreachable: ${err}`)
+  // Only one POST may be in flight: older responses cannot overwrite newer state.
+  // A failed revision stays pending until another event, refresh, or keep-alive.
+  async function deliver() {
+    if (stopped || !settingsReady || sending || delivered === revision) return
+    sending = true
+    while (!stopped && settingsReady && delivered !== revision) {
+      const sendingRevision = revision
+      const state = desired
+      const port = daemonPort
+      try {
+        const response = await fetch(daemon(port, "/state"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ state }),
+          signal: abort.signal,
+        })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        if (stopped) break
+        delivered = sendingRevision
+        orca.log(`ahakey: agents -> ${state} (${states.size} tracked)`)
+      } catch (err) {
+        if (!stopped) orca.log(`ahakey: state delivery failed: ${err}`)
+        if (sendingRevision === revision || stopped) break
+      }
     }
+    sending = false
   }
 
-  orca.events.on("agent.status.changed", (event) => {
-    if (event.state === "waiting" || event.state === "blocked" ||
-        event.state === "working" || event.state === "done") {
-      states.set(event.paneKey, event.state)
-      void push()
+  function updateAggregate(force = false) {
+    const next = aggregate()
+    if (next !== desired || force) {
+      desired = next
+      revision++
     }
-  })
+    updateStatusBar()
+    void deliver()
+  }
 
-  // Register the status bar item's command: pressing it (or running from the
-  // palette) forces a state refresh.
-  orca.commands.register("ahakey.refresh", () => {
-    lastSent = null
-    void push()
-  })
+  // OLED uploads are also serialized; only edits request an upload, never startup.
+  async function deliverOled() {
+    if (stopped || !settingsReady || oledSending || oledDelivered === oledRevision || !oledText) return
+    oledSending = true
+    while (!stopped && settingsReady && oledDelivered !== oledRevision && oledText) {
+      const sendingRevision = oledRevision
+      const text = oledText
+      try {
+        const response = await fetch(daemon(daemonPort, "/display"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: abort.signal,
+        })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        if (stopped) break
+        oledDelivered = sendingRevision
+      } catch (err) {
+        if (!stopped) orca.log(`ahakey: display delivery failed: ${err}`)
+        if (sendingRevision === oledRevision || stopped) break
+      }
+    }
+    oledSending = false
+  }
 
-  // Keep-alive: every 30 s read the daemon's device status (battery changes
-  // slowly, so this cadence is plenty) and re-assert the aggregate so the
-  // daemon's watchdog (expires "working" after 75 s of silence) doesn't kill
-  // the lights during genuinely long-running agent tasks. "Done" is skipped:
-  // it's a one-shot (daemon turns the lights off itself) and re-asserting it
-  // would replay the siren forever.
+  // Serialize settings reads, including changes that arrive during an earlier read.
+  async function loadSettings() {
+    if (stopped || settingsLoading) return
+    settingsLoading = true
+    while (!stopped) {
+      const loadingRevision = settingsRevision
+      try {
+        const settings = await orca.settings.get()
+        if (stopped) break
+        if (loadingRevision !== settingsRevision) continue
+        const port = Number(settings.daemonPort)
+        const nextPort = Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 8787
+        const portChanged = daemonPort !== nextPort
+        daemonPort = nextPort
+        settingsReady = true
+        if (portChanged) {
+          revision++
+          if (oledDelivered !== oledRevision) oledRevision++
+        }
+        if (oledChanged) {
+          oledChanged = false
+          const text = String(settings.oledText ?? "").trim()
+          if (text !== oledText) {
+            oledText = text
+            oledRevision++
+            // Empty text means leave the screen alone and cancels pending uploads.
+            if (!text) oledDelivered = oledRevision
+          }
+        }
+        updateStatusBar()
+        void deliver()
+        void deliverOled()
+        break
+      } catch (err) {
+        if (!stopped) orca.log(`ahakey: settings read failed: ${err}`)
+        if (loadingRevision === settingsRevision || stopped) break
+      }
+    }
+    settingsLoading = false
+  }
+
+  const subscriptions = [
+    orca.events.on("agent.status.changed", (event) => {
+      const key = JSON.stringify([event.workspaceId, event.paneKey])
+      const previous = states.get(key)
+      if (previous && event.receivedAt < previous.receivedAt) return
+      states.set(key, {
+        state: event.state,
+        workspaceId: event.workspaceId,
+        terminalId: event.terminalId ?? previous?.terminalId,
+        receivedAt: event.receivedAt,
+      })
+      updateAggregate()
+    }),
+    orca.events.on("workspace.removed", (event) => {
+      for (const [key, agent] of states) {
+        if (agent.workspaceId === event.workspaceId) states.delete(key)
+      }
+      updateAggregate()
+    }),
+    orca.events.on("workspace.changed", ({ context }) => {
+      if (!context) return
+      const terminals = new Set(context.terminals.map((terminal) => terminal.id))
+      // The event has no workspace ID. An agent whose terminal appears in this
+      // context identifies its workspace; never prune a different workspace.
+      const presentWorkspaces = new Set<string>()
+      for (const agent of states.values()) {
+        if (agent.workspaceId && agent.terminalId && terminals.has(agent.terminalId)) {
+          presentWorkspaces.add(agent.workspaceId)
+        }
+      }
+      if (presentWorkspaces.size !== 1) return
+      const workspaceId = presentWorkspaces.values().next().value
+      let changed = false
+      for (const [key, agent] of states) {
+        if (agent.workspaceId === workspaceId && agent.terminalId && !terminals.has(agent.terminalId)) {
+          states.delete(key)
+          changed = true
+        }
+      }
+      if (changed) updateAggregate()
+    }),
+    orca.commands.register("ahakey.refresh", () => {
+      if (!settingsReady) void loadSettings()
+      updateAggregate(true)
+      void deliverOled()
+    }),
+    orca.settings.onDidChange(({ key }) => {
+      if (key !== "daemonPort" && key !== "oledText") return
+      settingsRevision++
+      // Pause new sends until this change has been read. Invalidate any
+      // in-flight OLED upload before it can acknowledge the old port.
+      settingsReady = false
+      if (key === "daemonPort" && oledDelivered !== oledRevision) oledRevision++
+      if (key === "oledText") oledChanged = true
+      void loadSettings()
+    }),
+  ]
+
   const keepAlive = setInterval(() => {
-    fetch(daemon("/status"))
-      .then((r) => r.json())
-      .then((s: { device?: { battery?: number } }) => {
-        if (typeof s?.device?.battery === "number") battery = s.device.battery
-        updateStatusBar(aggregate())
+    if (!settingsReady) {
+      void loadSettings()
+      return
+    }
+    const port = daemonPort
+    void fetch(daemon(port, "/status"), { signal: abort.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json() as Promise<{ device?: { battery?: number } }>
+      })
+      .then((status) => {
+        if (stopped || !settingsReady || port !== daemonPort) return
+        battery = typeof status.device?.battery === "number" ? status.device.battery : null
+        updateStatusBar()
       })
       .catch(() => {})
-    const agg = aggregate()
-    if (agg === "done") return
-    lastSent = null
-    void push()
+    // A successfully delivered done is one-shot, but a failed one is retried.
+    if (desired !== "done") updateAggregate(true)
+    else void deliver()
+    void deliverOled()
   }, 30_000)
 
-  // Keyboard screen text: only uploads when the user edits the setting in
-  // Orca's Settings — never automatically (the upload takes seconds and shows
-  // an "Uploading pic" screen on the device, too ugly for every switch).
-  let lastOledText: string | undefined
-
-  async function loadDaemonPort() {
-    const p = Number(await orca.settings.get("daemonPort"))
-    if (Number.isInteger(p) && p >= 1 && p <= 65535) daemonPort = p
-  }
-  try {
-    orca.settings.onDidChange(async () => {
-      await loadDaemonPort()
-      const text = String((await orca.settings.get("oledText")) ?? "").trim()
-      if (!text || text === lastOledText) return
-      lastOledText = text
-      fetch("http://127.0.0.1:8787/display", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text }),
-      }).catch(() => {})
-    })
-  } catch { /* settings API unavailable — screen stays as-is */ }
-  void loadDaemonPort()
-
+  void loadSettings()
   orca.log("ahakey: bridge active")
-  return () => clearInterval(keepAlive)
+  stop = () => {
+    stopped = true
+    clearInterval(keepAlive)
+    abort.abort()
+    for (const subscription of subscriptions) subscription.dispose()
+  }
+}
+
+export function deactivate() {
+  stop?.()
+  stop = undefined
 }

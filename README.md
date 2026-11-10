@@ -10,58 +10,121 @@ against the real hardware.
 
 ## Setup from scratch
 
-Prerequisites: macOS with [Orca](https://orca.new), [Xcode Command Line Tools](https://developer.apple.com/xcode/) (`xcode-select --install` — provides `swiftc`), an AhaKey X1, and optionally [Raycast](https://raycast.com) for voice input.
+Prerequisites: macOS, [Orca](https://orca.new) 1.4.248 or newer, an AhaKey X1, and
+[Xcode Command Line Tools](https://developer.apple.com/xcode/) (`xcode-select --install`
+provides `swiftc`). [Raycast](https://raycast.com) is optional for voice input.
 
-1. **Pair the keyboard** — System Settings → Bluetooth → connect the `AhaKey …` entry. This bonds the HID half (the key bindings). You'll know it's working when the keys act as shortcuts in any app.
+1. **Pair the keyboard** in System Settings → Bluetooth: connect the `AhaKey …` entry.
+   This bonds the HID keyboard; check that its keys work. Power it on and leave Bluetooth enabled.
 
-2. **Build and start the daemon**:
+2. **Build and run the daemon in the foreground.** In Terminal:
 
    ```sh
-   git clone https://github.com/jake-101/ahakey-x1
+   git clone https://github.com/jake-101/ahakey-x1.git
    cd ahakey-x1/daemon
    swiftc -O -o ahakey-daemon daemon.swift
-   ./ahakey-daemon          # approve Bluetooth access when macOS asks
+   ./ahakey-daemon
    ```
 
-   Verify: `curl localhost:8787/status` should say `"connected":true` — then try
-   `curl -X POST localhost:8787/state -d '{"state":"working"}'` and watch the light bar.
-
-3. **Auto-start it** — install the launchd agent (edit the copied plist first, replacing
-   the placeholder path with your checkout path):
+   Allow Bluetooth access when macOS asks. Leave this terminal running and use a
+   **second terminal** to check the daemon and test the lights:
 
    ```sh
+   curl http://127.0.0.1:8787/status
+   curl -X POST http://127.0.0.1:8787/state -H 'content-type: application/json' -d '{"state":"working"}'
+   curl -X POST http://127.0.0.1:8787/state -H 'content-type: application/json' -d '{"state":"idle"}'
+   ```
+
+   Wait for `"connected":true` before testing. The first POST should show a blue
+   sweep in work mode 0; the second clears it. Stop the foreground daemon with
+   Ctrl-C before starting the LaunchAgent, so only one daemon owns the port and BLE connection.
+
+3. **Start it automatically at login.** From the checkout's `daemon` directory:
+
+   ```sh
+   mkdir -p ~/Library/LaunchAgents
    cp ../launchd/com.ahakey.daemon.plist ~/Library/LaunchAgents/
-   # edit ~/Library/LaunchAgents/com.ahakey.daemon.plist → fix the binary path
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ahakey.daemon.plist
    ```
 
-4. **Install the Orca plugin**:
+   Edit `~/Library/LaunchAgents/com.ahakey.daemon.plist`: replace
+   `/path/to/ahakey-x1/daemon/ahakey-daemon` with the **absolute** path to the
+   binary you built (use `pwd` in the daemon directory to find it). Then:
 
    ```sh
-   orca plugin install github.com/jake-101/ahakey-x1     # once listed in the directory
-   # or, from a clone of this repo:
-   orca plugin install ./orca-ahakey
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.ahakey.daemon.plist
+   curl http://127.0.0.1:8787/status
    ```
 
-   Approve it when Orca asks (it runs a Node worker and reads agent status). You should
-   see an **AhaKey** item in Orca's status bar showing agent state + battery.
+   The agent runs at login and restarts if it exits. Its log is
+   `/tmp/ahakey-daemon.log`. If macOS requests Bluetooth access for the launched
+   process, allow it in System Settings → Privacy & Security → Bluetooth.
 
-5. **Voice input (optional)** — in Raycast Settings → Extensions → Dictation:
-   set the hotkey to **F13** (then the keyboard's mic key triggers it) and pick your
-   input device (the X1's own mic is *not* a macOS audio device — use e.g. a display mic).
+4. **Install AhaKey Bridge in Orca.** In Orca's plugin marketplace, search for
+   **AhaKey Bridge** (`jake-101.ahakey`) and install it if listed. Alternatively,
+   from the checkout's `daemon` directory install this local copy:
 
-6. **Optional settings** — Orca → Settings → AhaKey Bridge:
-   *Keyboard screen text* (shown on the X1's OLED, uploaded once on change) and
-   *Daemon port* (only if you don't use the default 8787).
+   ```sh
+   orca plugin install ../orca-ahakey
+   ```
+
+   Orca requires approval for this trusted worker's **Full Access**: it executes
+   code on your Mac, reads agent and workspace status, and accesses its own settings.
+   Review the source and requested access before approving. The CLI prints an
+   `approval_required` response with the exact fingerprint-bound command to rerun;
+   approve in Orca if using the UI. No marketplace release is implied by changes in
+   this checkout. The AhaKey status bar item shows aggregate agent state and, when
+   available, battery.
+
+5. **Optional settings** — Orca → Settings → AhaKey Bridge: *Keyboard screen text*
+   uploads on change (empty leaves the screen unchanged); *Daemon port* must match
+   the daemon's port, default 8787.
+
+6. **Voice input (optional)** — in Raycast Settings → Extensions → Dictation:
+   set the hotkey to **F13** and pick an input device. The X1 mic is not a macOS
+   audio device; use another microphone.
+
+## Updating
+
+Pull updates in your checkout, rebuild from `daemon/` with
+`swiftc -O -o ahakey-daemon daemon.swift`, then restart the installed agent:
+
+```sh
+launchctl kickstart -k gui/$(id -u)/com.ahakey.daemon
+```
+
+Update the plugin separately in Orca's marketplace or with
+`orca plugin update jake-101.ahakey`. Catalog installs update to the catalog's
+offered release, which may lag this checkout; folder installs re-copy that folder.
+Review and approve any new access when prompted. Rebuild/restart does not publish
+or update the marketplace plugin.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| Lights dead, keys work | `curl localhost:8787/status` — if `connected:false`, power-cycle the keyboard (the daemon catches it during its blue-flashing window) |
-| Keys dead or wrong | Check System Settings → Bluetooth: if the device name suffix changed, the BLE identity rotated — remove the old entry and re-pair |
-| Lights wrong in some modes | The custom light table applies to **work mode 0**; short-press the power button until the screen shows mode 0's logo |
-| Bar stuck animating | Shouldn't happen (75 s watchdog expires zombie states); if it does, click the status bar item or `launchctl kickstart -k gui/$(id -u)/com.ahakey.daemon` |
+Work through the layers in order:
+
+1. **HID:** if keys do not work, check Bluetooth pairing and power. If the device
+   name suffix changed, remove the old entry and re-pair. The suffix can change
+   after a reset. Keys and custom lights are separate Bluetooth functions.
+2. **Daemon:** if `curl http://127.0.0.1:8787/status` fails, check the foreground
+   process or `/tmp/ahakey-daemon.log`, the plist's binary path, and Bluetooth
+   permission. Ensure no other daemon occupies the port. For a different port,
+   use that port in curl and the plugin settings. If the server responds but
+   `"connected":false`, check Bluetooth and power-cycle the keyboard to advertise
+   again. The direct `/state` test above isolates BLE/lights from Orca.
+3. **Device lights:** if connected but the direct test does not light the bar,
+   short-press the power button to select work mode 0. Check the daemon log.
+4. **Orca:** if the direct test works but agent events do not, check that plugins
+   are enabled and AhaKey Bridge is installed, approved and enabled; inspect
+   `orca plugin list` and `orca plugin logs jake-101.ahakey`. Ensure the plugin's
+   daemon port matches. Only agents supervised by Orca send these events.
+
+Click the AhaKey status bar item or run **AhaKey: refresh agent status** to resend
+the tracked aggregate. Orca cannot identify every closed pane: a last-terminal or
+nonfocused-pane closure can leave a stale tracked state, and refresh does not
+reconstruct all workspaces. Restarting the plugin with
+`orca plugin restart jake-101.ahakey` clears its tracked states; subsequent events
+repopulate them. The daemon's 75-second watchdog expires unrefreshed *working*
+states only; a live plugin can keep reasserting a stale state.
 
 ## What it does
 
@@ -94,8 +157,8 @@ orca-ahakey plugin ──HTTP──> ahakey-daemon ──BLE──> AhaKey X1 li
 
 ## Components
 
-| Components |
-|---|
+| Component | Purpose |
+|---|---|
 | `daemon/` | Swift + CoreBluetooth daemon: keeps the BLE connection, HTTP API on `127.0.0.1:8787` (`/state`, `/display`, `/remap`, `/status`), LED state sync + heartbeat, device status polling. Runs under launchd. |
 | `launchd/` | LaunchAgent plist template for auto-starting the daemon at login. |
 | `orca-ahakey/` | [Orca](https://orca.new) plugin: subscribes to `agent.status.changed`, aggregates across all workspaces, forwards to the daemon. Adds an Orca status bar item (state + battery). |
@@ -110,8 +173,6 @@ orca-ahakey plugin ──HTTP──> ahakey-daemon ──BLE──> AhaKey X1 li
   System Settings only if the keys stop working and the suffix has changed.
 - The keyboard must be paired once via System Settings → Bluetooth for the key bindings
   to work (standard HID).
-- Paths (home dir, device ids, launchd labels) are hardcoded to this machine — treat the
-  code as a working reference implementation, not a turnkey installer.
 - Device was on **firmware 1.0** when this was written; the vendor's current release is
   1.1.x (adds USB HID and new OLED features — see `reference/research/`).
 

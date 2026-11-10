@@ -6,7 +6,7 @@
   "publisher": "jake-101",
   "name": "AhaKey Bridge",
   "version": "0.1.9",
-  "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue sweep while working, red flash when an agent needs you, cyan siren when done.",
+  "description": "macOS only. Requires the separately installed and running ahakey-daemon on the same Mac. Mirrors Orca agent status onto the AhaKey X1 light bar: blue sweep while working, red flash when an agent needs you, cyan siren when done.",
   "icon": "icon.png",
   "cover": {
     "path": "cover.jpg",
@@ -14,10 +14,11 @@
   },
   "author": { "name": "Jake" },
   "license": "MIT",
+  "homepage": "https://github.com/jake-101/ahakey-x1#setup-from-scratch",
   "engines": { "orca": ">=1.4.248" },
   "pluginApi": 1,
   "main": "main.ts",
-  "capabilities": [{ "kind": "agent:read" }, { "kind": "settings:own" }],
+  "capabilities": [{ "kind": "agent:read" }, { "kind": "workspace:read" }, { "kind": "settings:own" }],
   "contributes": {
     "commands": [{ "id": "ahakey.refresh", "title": "AhaKey: refresh agent status" }],
     "settings": [
@@ -47,6 +48,6 @@
         "command": "ahakey.refresh"
       }
     ],
-    "events": [{ "on": "agent.status.changed" }]
+    "events": [{ "on": "agent.status.changed" }, { "on": "workspace.changed" }, { "on": "workspace.removed" }]
   }
 }

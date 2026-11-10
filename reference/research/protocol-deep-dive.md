@@ -79,6 +79,10 @@ commit:  AA BB 82 [mode] [start:2LE] [count:2LE] [delayMs:2LE] CC DD, wait echo 
 then:    AA BB 04 CC DD (SAVE_CONFIG — sent by the app's write flow; win-java always
          sends it right after 0x82; treat as required for persistence)
 ```
+The Swift daemon aborts an upload on any failure instead of automatically retrying a
+sector; a timeout or transport failure recycles the connection before another upload
+or remap can start. Its text-display HTTP response reports completion only after both
+the commit and save ACKs succeed. Device rejections are not retried.
 
 - Frame N in mode M lives at address `(10 + min(3,M)*70 + N) * 28672`.
 - Slot = 28672 B (7 sectors); payload 25600 B; trailing 3072 B never written.
