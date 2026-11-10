@@ -13,6 +13,7 @@ export default function activate(orca) {
   // paneKey -> "working" | "blocked" | "waiting" | "done"
   const states = new Map()
   let lastSent = null
+  let lastSentWorkspace = null
 
   function aggregate() {
     const values = [...states.values()]
@@ -48,6 +49,19 @@ export default function activate(orca) {
       states.set(event.paneKey, event.state)
       void push()
     }
+  })
+
+  // Mirror the focused workspace's project name onto the X1's OLED.
+  // (New subscribers immediately receive the current context.)
+  orca.events.on("workspace.changed", (event) => {
+    const name = event.context?.displayName
+    if (!name) return
+    lastSentWorkspace = name
+    fetch("http://127.0.0.1:8787/display", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: name }),
+    }).catch((err) => orca.log?.(`ahakey: display failed: ${err}`))
   })
 
   orca.log?.("ahakey: bridge active")

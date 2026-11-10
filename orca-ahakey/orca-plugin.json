@@ -11,8 +11,8 @@
   "engines": { "orca": ">=1.4.246" },
   "pluginApi": 1,
   "main": "main.ts",
-  "capabilities": [{ "kind": "agent:read" }],
+  "capabilities": [{ "kind": "agent:read" }, { "kind": "workspace:read" }],
   "contributes": {
-    "events": [{ "on": "agent.status.changed" }]
+    "events": [{ "on": "agent.status.changed" }, { "on": "workspace.changed" }]
   }
 }

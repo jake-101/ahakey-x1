@@ -1,5 +1,29 @@
 # Session log
 
+## 2026-11-10 (evening) — device identity, work modes, OLED paused
+
+- **Work modes discovered**: a short press on the power button cycles work mode
+  0 → 1 → 2 (factory presets branded as Claude Code / Codex / Cursor — the OLED logo
+  animation changes per mode). Each mode has its own key mappings, OLED animation set,
+  and light-state table. Our light-table rewrite (0x84) applied to **mode 0 only**;
+  modes 1/2 keep factory behavior (including the blue-middle Stop look).
+- **MAC rotation**: power-cycling the device rotated its BLE address —
+  "AhaKey AF1E" (`D0:F8:AF:1E:7E:C3`) became "AhaKey B11E". The old macOS pairing and the
+  old peripheral identifier die with the old address. The daemon now connects by
+  advertised name (prefix "AhaKey") and caches the last-seen identifier in
+  `~/.ahakey-daemon/peripheral-id`; it catches the device during its post-power-on
+  advertising window (blue flashing).
+- Note: re-pair in System Settings → Bluetooth whenever the name suffix changes.
+- **OLED project-name display: paused.** Architecture is proven and coded (daemon renders
+  text → RGB565 frame → chunked upload via 0x80/0x7341 → 0x82 commit; plugin posts
+  `workspace.changed` names) but the device stalls in "Uploading pic 10,70" after the
+  first chunk ACK: only the first `0x80` gets acknowledged (`AA BB 80 00`), no `0x81`
+  write-results, no further ACKs — even with 180-byte packetization. Suspicion: upload
+  session was corrupted by the early malformed attempts, or an undocumented handshake
+  step is missing (the vendor app subscribes to 0x7341 notifications; that char has no
+  notify property on this firmware). Needs a clean device + fresh investigation.
+- Daemon unbuffered logging fixed (launchd log now works).
+
 ## 2026-11-10 (later) — LED polish: ending state + continuous working animation
 
 - Real-world use showed two flaws: the bar *settled* into static blue middle (1) at the
