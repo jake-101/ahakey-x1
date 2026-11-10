@@ -107,8 +107,7 @@ then:    AA BB 04 CC DD (SAVE_CONFIG — sent by the app's write flow; win-java 
 
 ## Community repos to investigate (user's pointer: other GitHub repos document this)
 
-- `awesome-ahakey` repo lists community clients/tools (we have its README; the actual
-  linked projects need a pass — fetch and triage).
+- `awesome-ahakey` — **placeholder only, nothing to reference** (confirmed by Jake).
 - The Windows Java client (`ahakeyconfig-win-java`) is the ONLY source for 0x93/0x94,
   0x99 task-slot, 0x9A heartbeat, and 0x9F capability-query commands.
 - Nexting SDK (nexting.ai) has an AhaKey X1 case study with a JSON-over-BLE profile
