@@ -5,7 +5,7 @@
   "id": "ahakey",
   "publisher": "jake-101",
   "name": "AhaKey Bridge",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue breathing while working, yellow when an agent needs you, green flash when done.",
   "author": { "name": "Jake" },
   "license": "MIT",
@@ -26,7 +26,13 @@
       }
     ],
     "statusBarItems": [
-      { "id": "ahakey-status", "text": "AhaKey", "icon": "zap", "command": "ahakey.refresh" }
+      {
+        "id": "ahakey-status",
+        "text": "AhaKey",
+        "icon": "zap",
+        "command": "ahakey.refresh",
+        "tooltip": "Agent status — click to re-sync. Screen text: Orca Settings → AhaKey Bridge"
+      }
     ],
     "events": [{ "on": "agent.status.changed" }]
   }
