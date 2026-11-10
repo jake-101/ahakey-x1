@@ -45,11 +45,13 @@ export default function activate(orca) {
   }
 
   const TONES = { working: "accent", waiting: "danger", blocked: "danger", done: "success", idle: "neutral" }
+  let battery = null
   function updateStatusBar(state) {
     try {
+      const batt = battery != null ? ` · ${battery}%` : ""
       orca.statusBar.update({
         id: "ahakey-status",
-        text: state === "idle" ? "AhaKey" : `AhaKey: ${state}`,
+        text: state === "idle" ? `AhaKey${batt}` : `AhaKey: ${state}${batt}`,
         tone: TONES[state] ?? "neutral",
       })
     } catch { /* status bar is cosmetic */ }
@@ -70,11 +72,20 @@ export default function activate(orca) {
     void push()
   })
 
-  // Re-assert the aggregate every 30 s so the daemon's watchdog (which expires
-  // "working" after 75 s of silence) doesn't kill the lights during genuinely
-  // long-running agent tasks. "Done" is skipped: it's a one-shot (daemon turns
-  // the lights off itself) and re-asserting it would replay the siren forever.
+  // Keep-alive: every 30 s read the daemon's device status (battery changes
+  // slowly, so this cadence is plenty) and re-assert the aggregate so the
+  // daemon's watchdog (expires "working" after 75 s of silence) doesn't kill
+  // the lights during genuinely long-running agent tasks. "Done" is skipped:
+  // it's a one-shot (daemon turns the lights off itself) and re-asserting it
+  // would replay the siren forever.
   const keepAlive = setInterval(() => {
+    fetch("http://127.0.0.1:8787/status")
+      .then((r) => r.json())
+      .then((s) => {
+        if (typeof s?.device?.battery === "number") battery = s.device.battery
+        updateStatusBar(aggregate())
+      })
+      .catch(() => {})
     const agg = aggregate()
     if (agg === "done") return
     lastSent = null

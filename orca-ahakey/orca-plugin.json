@@ -5,7 +5,7 @@
   "id": "ahakey",
   "publisher": "jake-101",
   "name": "AhaKey Bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue breathing while working, yellow when an agent needs you, green flash when done.",
   "author": { "name": "Jake" },
   "license": "MIT",
