@@ -5,19 +5,29 @@
   "id": "ahakey",
   "publisher": "jake-101",
   "name": "AhaKey Bridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Mirrors Orca agent status onto the AhaKey X1 light bar: blue breathing while working, yellow when an agent needs you, green flash when done.",
   "author": { "name": "Jake" },
   "license": "MIT",
   "engines": { "orca": ">=1.4.248" },
   "pluginApi": 1,
   "main": "main.ts",
-  "capabilities": [{ "kind": "agent:read" }, { "kind": "workspace:read" }],
+  "capabilities": [{ "kind": "agent:read" }, { "kind": "settings:own" }],
   "contributes": {
     "commands": [{ "id": "ahakey.refresh", "title": "AhaKey: refresh agent status" }],
+    "settings": [
+      {
+        "key": "oledText",
+        "title": "Keyboard screen text",
+        "description": "Text shown on the X1's little screen. Uploads once when changed (takes a few seconds — the device shows 'Uploading pic'). Leave empty to leave the screen alone.",
+        "type": "string",
+        "maxLength": 40,
+        "placeholder": "e.g. build mode"
+      }
+    ],
     "statusBarItems": [
       { "id": "ahakey-status", "text": "AhaKey", "icon": "zap", "command": "ahakey.refresh" }
     ],
-    "events": [{ "on": "agent.status.changed" }, { "on": "workspace.changed" }]
+    "events": [{ "on": "agent.status.changed" }]
   }
 }

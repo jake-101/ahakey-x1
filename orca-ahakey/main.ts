@@ -4,25 +4,44 @@
 // (Claude Code, OMP, OpenCode, Codex, Grok, ...), aggregates them, and POSTs
 // the highest-priority state to the local BLE daemon (daemon/daemon.swift).
 
+import type { OrcaWorkerApi } from "orca/worker"
+
 const DAEMON = "http://127.0.0.1:8787/state"
 
-const PRIORITY = { blocked: 3, waiting: 3, working: 2, done: 1 }
+type AgentState = "working" | "blocked" | "waiting" | "done"
+type AggregateState = AgentState | "idle"
 
-/** @param {import('orca/worker').OrcaWorkerApi} orca */
-export default function activate(orca) {
+const PRIORITY: Record<AgentState, number> = { blocked: 3, waiting: 3, working: 2, done: 1 }
+
+export default function activate(orca: OrcaWorkerApi) {
   // paneKey -> "working" | "blocked" | "waiting" | "done"
-  const states = new Map()
-  let lastSent = null
-  let lastSentWorkspace = null
+  const states = new Map<string, AgentState>()
+  let lastSent: AggregateState | null = null
 
-  function aggregate() {
+  function aggregate(): AggregateState {
     const values = [...states.values()]
     if (values.length === 0) return "idle"
-    let best = "done"
+    let best: AgentState = "done"
     for (const s of values) {
       if ((PRIORITY[s] ?? 0) > (PRIORITY[best] ?? 0)) best = s
     }
     return best
+  }
+
+  const TONES: Record<AggregateState, "accent" | "danger" | "success" | "neutral"> = {
+    working: "accent", waiting: "danger", blocked: "danger", done: "success", idle: "neutral",
+  }
+  let battery: number | null = null
+
+  function updateStatusBar(state: AggregateState) {
+    try {
+      const batt = battery != null ? ` · ${battery}%` : ""
+      void orca.host.call("statusBar.update", {
+        id: "ahakey-status",
+        text: state === "idle" ? `AhaKey${batt}` : `AhaKey: ${state}${batt}`,
+        tone: TONES[state] ?? "neutral",
+      })
+    } catch { /* status bar is cosmetic */ }
   }
 
   async function push() {
@@ -36,25 +55,12 @@ export default function activate(orca) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ state }),
       })
-      orca.log?.(`ahakey: agents -> ${state} (${states.size} tracked)`)
+      orca.log(`ahakey: agents -> ${state} (${states.size} tracked)`)
     } catch (err) {
       // Daemon not running — don't spam; retry on next event.
       lastSent = null
-      orca.log?.(`ahakey: daemon unreachable: ${err}`)
+      orca.log(`ahakey: daemon unreachable: ${err}`)
     }
-  }
-
-  const TONES = { working: "accent", waiting: "danger", blocked: "danger", done: "success", idle: "neutral" }
-  let battery = null
-  function updateStatusBar(state) {
-    try {
-      const batt = battery != null ? ` · ${battery}%` : ""
-      orca.statusBar.update({
-        id: "ahakey-status",
-        text: state === "idle" ? `AhaKey${batt}` : `AhaKey: ${state}${batt}`,
-        tone: TONES[state] ?? "neutral",
-      })
-    } catch { /* status bar is cosmetic */ }
   }
 
   orca.events.on("agent.status.changed", (event) => {
@@ -67,7 +73,7 @@ export default function activate(orca) {
 
   // Register the status bar item's command: pressing it (or running from the
   // palette) forces a state refresh.
-  orca.commands?.register?.("ahakey.refresh", () => {
+  orca.commands.register("ahakey.refresh", () => {
     lastSent = null
     void push()
   })
@@ -81,7 +87,7 @@ export default function activate(orca) {
   const keepAlive = setInterval(() => {
     fetch("http://127.0.0.1:8787/status")
       .then((r) => r.json())
-      .then((s) => {
+      .then((s: { device?: { battery?: number } }) => {
         if (typeof s?.device?.battery === "number") battery = s.device.battery
         updateStatusBar(aggregate())
       })
@@ -92,19 +98,23 @@ export default function activate(orca) {
     void push()
   }, 30_000)
 
-  // Mirror the focused workspace's project name onto the X1's OLED.
-  // (New subscribers immediately receive the current context.)
-  orca.events.on("workspace.changed", (event) => {
-    const name = event.context?.displayName
-    if (!name) return
-    lastSentWorkspace = name
-    fetch("http://127.0.0.1:8787/display", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: name }),
-    }).catch((err) => orca.log?.(`ahakey: display failed: ${err}`))
-  })
+  // Keyboard screen text: only uploads when the user edits the setting in
+  // Orca's Settings — never automatically (the upload takes seconds and shows
+  // an "Uploading pic" screen on the device, too ugly for every switch).
+  let lastOledText: string | undefined
+  try {
+    orca.settings.onDidChange(async () => {
+      const text = String((await orca.settings.get("oledText")) ?? "").trim()
+      if (!text || text === lastOledText) return
+      lastOledText = text
+      fetch("http://127.0.0.1:8787/display", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+      }).catch(() => {})
+    })
+  } catch { /* settings API unavailable — screen stays as-is */ }
 
-  orca.log?.("ahakey: bridge active")
+  orca.log("ahakey: bridge active")
   return () => clearInterval(keepAlive)
 }
