@@ -32,8 +32,9 @@ reference/source-docs/     vendor docs (exact copies; ble-protocol.md is partly 
 
 ## The device
 
-- BLE only; USB-C is charging-only. Advertises as "AhaKey …" — **the suffix rotates with
-  the BLE MAC on every power cycle** (AF1E → B11E → …); connect by name prefix, not address.
+- BLE only; USB-C is charging-only. Advertises as "AhaKey …" — **the suffix can change**
+  (observed once after a long button hold = reset; normal power cycles keep the address).
+  Connect by name prefix, not address.
 - Keys (left→right): mic, checkmark, X, back arrow. Plain BLE HID — work on any computer.
   Bindings (mode 0): mic=**F13**, checkmark=**Return**, X=**Escape**, back arrow=**Delete**.
 - The mic is not a macOS audio device; the mic key is just an HID key (F13 → Raycast

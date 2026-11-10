@@ -47,8 +47,10 @@ orca-ahakey plugin ──HTTP──> ahakey-daemon ──BLE──> AhaKey X1 li
 ## Notes for reusing this
 
 - The X1 is **Bluetooth LE only** — the USB-C cable is charging-only (on firmware 1.0).
-- The device **rotates its BLE MAC on every power cycle**; connect by advertised name
-  (`AhaKey …`), not by address. Re-pair in System Settings when the suffix changes.
+- The device's BLE MAC/name suffix **can change** (observed once, after holding the
+  power button down — likely a reset; it does *not* change on normal power cycles).
+  So don't rely on the address — connect by advertised name (`AhaKey …`). Re-pair in
+  System Settings only if the keys stop working and the suffix has changed.
 - The keyboard must be paired once via System Settings → Bluetooth for the key bindings
   to work (standard HID).
 - Paths (home dir, device ids, launchd labels) are hardcoded to this machine — treat the
