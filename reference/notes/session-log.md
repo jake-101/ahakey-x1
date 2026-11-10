@@ -1,5 +1,27 @@
 # Session log
 
+## 2026-11-10 (night, 2) — Rust runtime trial: adopted for config, Swift daemon stays for live state
+
+- Installed Rust (brew, 1.99.1); cloned + built `ahakey-runtime-rust` to
+  `~/Projects/ahakey-runtime-rust` (btleplug + tokio, WebSocket/JSON-RPC on loopback,
+  discovery file at `~/Library/Application Support/AhaKey/runtime/discovery.json`).
+- **Works flawlessly on fw 1.0, first try**: found "AhaKey B11E", connected in ~3.7s,
+  0x9F catalog query OK, reads battery/brightness/lever/workMode, polls status.
+- **But the runtime has NO live AI-state (0x90) RPC** — it's a config/OLED tool. The
+  vendor's own architecture splits the same way (Rust = Studio config; Swift agent =
+  live state). So: **final architecture = two pieces** — Rust runtime for config/OLED
+  (when used), our Swift daemon for live lights (kept, works).
+- OLED upload through the runtime returned **UNSUPPORTED_CAPABILITY**: needs the CP2
+  resource profile (`x1-cp2-resource-v1`) — firmware 1.1.x. Our device is fw 1.0.
+  → OLED features require a firmware flash (official: Windows + WCHISPTool; Mac
+  alternative: `ch58x-programmer`, official HEX, ISP mode = hold voice key + plug USB
+  with a DATA cable). Deferred until we have Windows or a data-capable cable.
+- Firmware releases: v1.1.0 = current factory/recommended (adds USB HID, AI state light
+  protocol, brightness config, new OLED behavior); v1.0.0 = initial. Flashing resets BLE
+  identity → re-pair dance again.
+- Runtime ops: `cargo run --locked` (needs exclusive-ish BLE; fails with
+  RUNTIME_ALREADY_RUNNING if another instance holds the lock). Stopped for now.
+
 ## 2026-11-10 (night) — systematic protocol research (vendor source)
 
 - Two parallel research passes over the official client source produced
